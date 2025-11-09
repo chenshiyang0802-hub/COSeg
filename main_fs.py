@@ -518,7 +518,7 @@ def main_worker(gpu, ngpus_per_node, argss):
     # start training #
     ###################
 
-    if args.use_amp:
+    if args.use_amp and args.amp_dtype == "float16":
         scaler = torch.cuda.amp.GradScaler()
     else:
         scaler = None
@@ -562,13 +562,21 @@ def main_worker(gpu, ngpus_per_node, argss):
         if (epoch_log % args.save_freq == 0) and main_process():
             if not os.path.exists(args.save_path + "/model/"):
                 os.makedirs(args.save_path + "/model/")
-            filename = args.save_path + "/model/model_last.pth"
+            filename = f"{args.save_path}/model/model_epoch_{epoch:03d}.pth"
             logger.info("Saving checkpoint to: " + filename)
-            torch.save({"state_dict": model.state_dict()}, filename)
+            ckpt = {
+                "epoch": epoch,
+                "state_dict": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "scheduler": scheduler.state_dict() if scheduler is not None else None,
+                "scaler": scaler.state_dict() if (scaler is not None) else None,
+                "best_iou": best_iou,
+                }
+            torch.save(ckpt, filename)
             if is_best:
                 logger.info("Is best")
                 shutil.copyfile(
-                    filename, args.save_path + "/model/model_best.pth"
+                    filename, f"{args.save_path}/model/best_model_epoch_{epoch:03d}.pth"
                 )
 
     if main_process():
@@ -604,7 +612,13 @@ def train(
         query_y = query_y.cuda(non_blocking=True)
 
         use_amp = args.use_amp
-        with torch.cuda.amp.autocast(enabled=use_amp):
+        amp_dtype = args.amp_dtype 
+        if amp_dtype == "bfloat16":
+            autocast_kwargs = dict(enabled=use_amp, dtype=torch.bfloat16)
+        else:
+            autocast_kwargs = dict(enabled=use_amp) 
+
+        with torch.cuda.amp.autocast(**autocast_kwargs):
             output, loss = model(
                 support_offset,
                 support_x,
@@ -619,7 +633,7 @@ def train(
             )
 
         optimizer.zero_grad()
-        if use_amp:
+        if amp_dtype == "float16" and scaler is not None:
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()

@@ -45,7 +45,7 @@ def load_pretrain_checkpoint(model, pretrain_checkpoint_path, gpu):
         if isinstance(gpu, list):
             assert len(gpu) == 1
             gpu = gpu[0]
-        pretrained_dict = torch.load(os.path.join(pretrain_checkpoint_path, 'model', 'model_best.pth'), map_location={'cuda:0':'cuda:%d'%gpu})['state_dict']
+        pretrained_dict = torch.load(os.path.join(pretrain_checkpoint_path, 'model', 'model_best.pth'), map_location='cuda:0')['state_dict']
 
         if isinstance(model, torch.nn.parallel.DistributedDataParallel):
             pretrained_dict = {k.replace('module.', 'module.encoder.'): v for k, v in pretrained_dict.items()}

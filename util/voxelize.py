@@ -1,11 +1,11 @@
 import numpy as np
-from collections import Sequence
+from collections.abc import Sequence
 import torch
 from torch_geometric.nn import voxel_grid
 
 def grid_sample(pos, batch_index, size, start=None, return_p2v=True):
     # pos: float [N, 3]
-    # batch_szie: long int
+    # batch_size: long int
     # size: float [3, ]
     # start: float [3, ] / None
 

@@ -103,7 +103,7 @@ def grid_sample(pos, batch, size, start, return_p2v=True):
     """
 
     cluster = voxel_grid(
-        pos, batch, size, start=start
+        pos, size, batch, start=start
     )  # [N, ] idicate the cluster each point belonging to
 
     if return_p2v == False:
@@ -182,6 +182,7 @@ class TransitionDown(nn.Module):
         n_xyz = xyz[idx.long(), :]  # (m, 3)
         n_gt = gt[idx.long()]  # (m, 1)
         if query_base_y != None:
+            query_base_y = query_base_y.to(idx.device)
             n_query_base_y = query_base_y[idx.long()]  # (m, 1)
         else:
             n_query_base_y = query_base_y

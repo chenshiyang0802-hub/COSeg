@@ -97,3 +97,9 @@ data/
 *.sh
 logs
 val.py
+
+/pretrained_ckps
+/saved_models
+/eval
+/datasets
+/config
