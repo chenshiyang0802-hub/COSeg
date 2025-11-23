@@ -3,6 +3,9 @@ COSeg Training script.
 
 """
 
+import warnings
+warnings.filterwarnings("ignore")
+
 import os
 import time
 import random
@@ -183,7 +186,7 @@ def main_worker(gpu, ngpus_per_node, argss):
     if main_process():
         logger.info(args)
         logger.info("=> creating model ...")
-        logger.info(model)
+        # logger.info(model)
         logger.info(
             "#Model parameters: {}".format(
                 sum([x.nelement() for x in model.parameters()])

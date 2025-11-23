@@ -542,7 +542,8 @@ class BasicLayer(nn.Module):
             ) // downsample_scale + 1
             new_offset.append(count)
 
-        new_offset = torch.cuda.IntTensor(new_offset)
+        # new_offset = torch.cuda.IntTensor(new_offset)
+        new_offset = torch.tensor(new_offset, dtype=torch.int32, device='cuda')
 
         downsample_idx = pointops.furthestsampling(
             xyz, offset.int(), new_offset.int()

@@ -103,3 +103,7 @@ val.py
 /eval
 /datasets
 /config
+tmp*
+lib/torch-points3d
+vis_results
+wandb

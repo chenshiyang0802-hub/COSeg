@@ -7,6 +7,8 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import os
+# os.environ['CUDA_VISIBLE_DEVICES'] = '6'
+
 import time
 import random
 import numpy as np
@@ -28,7 +30,8 @@ from functools import partial
 from util import config
 from util.s3dis_fs import S3DIS_FS, S3DIS_FS_TEST, S3DIS_FSForVIS
 #!
-from util.tooth_fs import Tooth_FS
+from util.tooth_fs import Tooth_FS, Tooth_FS_TEST, Tooth_FSForVIS
+
 from util.scannet_v2_fs import Scannetv2_FS, Scannetv2_FS_TEST
 from util.common_util import (
     AverageMeter,
@@ -54,7 +57,7 @@ def get_parser():
     parser.add_argument(
         "--config",
         type=str,
-        default="config/s3dis_COSeg_fs.yaml",
+        default="config/tooth_COSeg_fs.yaml",
         help="config file",
     )
     parser.add_argument(
@@ -73,7 +76,6 @@ def get_parser():
 
 def worker_init_fn(worker_id):
     random.seed(args.manual_seed + worker_id)
-
 
 def main_process():
     return not args.multiprocessing_distributed or (
@@ -306,7 +308,41 @@ def main_worker(gpu, ngpus_per_node, argss):
             n_queries=args.n_queries,
             num_episode_per_comb=args.num_episode_per_comb,
         )
-        valid_calsses = list(val_data.classes)
+    elif args.data_name == "tooth":
+        if args.forvis:
+            # 确保你在命令行或配置文件中传入了 target_class
+            # 例如: --opts forvis True target_class 1
+            val_data = Tooth_FSForVIS(
+                split="test", 
+                data_root=args.data_root,
+                voxel_size=args.voxel_size,
+                voxel_max=args.voxel_max,
+                transform=val_transform,
+                cvfold=args.cvfold,
+                num_episode=args.num_episode,
+                n_way=args.n_way,
+                k_shot=args.k_shot,
+                n_queries=args.n_queries,
+                preload=True, 
+                target_class=args.target_class # 必须传入目标类别 ID
+            )
+            # 在可视化模式下，有效类别列表通常只包含当前的目标类别，或者保持原样
+            valid_calsses = list(val_data.classes)
+        else:
+            val_data = Tooth_FS_TEST(
+                split=args.eval_split, 
+                data_root=args.data_root,
+                voxel_size=args.voxel_size,
+                voxel_max=args.voxel_max,
+                transform=val_transform,
+                cvfold=args.cvfold,
+                num_episode=args.num_episode, # 验证时的 episode 数
+                n_way=args.n_way,
+                k_shot=args.k_shot,
+                n_queries=args.n_queries,
+                preload=False # 开启内存预加载加速
+            )
+            valid_calsses = list(val_data.classes)
     else:
         raise ValueError(
             "The dataset {} is not supported.".format(args.data_name)
@@ -427,6 +463,38 @@ def main_worker(gpu, ngpus_per_node, argss):
             n_queries=args.n_queries,
         )
         train_calsses = list(train_data.classes)
+
+    elif args.data_name == "tooth":
+        train_transform = None
+        if args.aug:
+            if main_process():
+                logger.info("use Augmentation for Tooth")
+            train_transform = transform.Compose(
+                [
+                    transform.RandomRotate(along_z=args.get("rotate_along_z", True)),
+                    transform.RandomScale(scale_low=0.8, scale_high=1.2),
+                    transform.RandomJitter(sigma=0.005, clip=0.02),
+                    # 牙齿没有颜色，所以 RandomDropColor 其实没用，可以去掉
+                ]
+            )
+        
+        train_data = Tooth_FS(
+            split="train",
+            data_root=args.data_root,
+            voxel_size=args.voxel_size,
+            voxel_max=args.voxel_max,
+            transform=train_transform,
+            shuffle_index=True,
+            loop=args.loop,
+            cvfold=args.cvfold,
+            num_episode=args.num_episode,
+            n_way=args.n_way,
+            k_shot=args.k_shot,
+            n_queries=args.n_queries,
+            preload=True # 开启内存预加载
+        )
+        train_calsses = list(train_data.classes)
+
     else:
         raise ValueError(
             "The dataset {} is not supported.".format(args.data_name)
@@ -761,7 +829,8 @@ def validate(val_loader, model, valid_calsses):
 
     if args.forvis:
         target_class = val_loader.dataset.target_class
-        pred_path = os.path.join(args.vis_save_path, target_class)
+        # pred_path = os.path.join(args.vis_save_path, target_class)
+        pred_path = os.path.join(args.vis_save_path, str(target_class))
         os.makedirs(pred_path, exist_ok=True)
 
     torch.cuda.empty_cache()
