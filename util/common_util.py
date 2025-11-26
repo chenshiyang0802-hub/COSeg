@@ -366,3 +366,102 @@ def smooth_loss(output, target, eps=0.1):
     log_prob = F.log_softmax(output, dim=1)
     loss = (-w * log_prob).sum(dim=1).mean()
     return loss
+
+
+# --- 定义颜色映射表 (只保留 RGB 值) ---
+LABEL2COLOR_LOWER = {
+    1: (240, 0, 0),       # LL1
+    2: (251, 255, 3),     # LL2
+    3: (44, 251, 255),    # LL3
+    4: (241, 47, 255),    # LL4
+    5: (125, 255, 155),   # LL5
+    6: (26, 125, 255),    # LL6
+    7: (255, 234, 157),   # LL7
+    8: (204, 126, 126),   # LL8
+    9: (206, 129, 212),   # LR1
+    10: (45, 135, 66),    # LR2
+    11: (185, 207, 45),   # LR3
+    12: (69, 147, 207),   # LR4
+    13: (207, 72, 104),   # LR5
+    14: (4, 207, 4),      # LR6
+    15: (35, 1, 207),     # LR7
+    16: (82, 204, 169),   # LR8
+    0: (125, 125, 125),   # GUM
+}
+
+LABEL2COLOR_UPPER = {
+    1: (170, 255, 127),   # UL1
+    2: (170, 255, 255),   # UL2
+    3: (255, 255, 0),     # UL3
+    4: (255, 170, 0),     # UL4
+    5: (170, 170, 255),   # UL5
+    6: (0, 170, 255),     # UL6
+    7: (85, 170, 0),      # UL7
+    8: (204, 204, 15),    # UL8
+    9: (255, 85, 255),    # UR1
+    10: (255, 85, 127),   # UR2
+    11: (85, 170, 127),   # UR3
+    12: (255, 85, 0),     # UR4
+    13: (0, 85, 255),     # UR5
+    14: (170, 0, 0),      # UR6
+    15: (73, 247, 235),   # UR7
+    16: (125, 18, 247),   # UR8
+    0: (125, 125, 125),   # GUM
+}
+
+def save_colored_ply_v2(coords, labels, filename, color_map, sampled_classes=None):
+    """
+    coords: (N, 3) 点云坐标
+    labels: (N,) 预测或真实标签 (可以是局部索引 0..K)
+    filename: 保存路径
+    color_map: 对应的颜色字典 (Upper 或 Lower)
+    sampled_classes: (List or Array) 本次 Episode 的真实类别列表。
+                     如果提供，会将 labels 中的 index 映射回真实 ID。
+    """
+    with open(filename, 'w') as f:
+        f.write('ply\n')
+        f.write('format ascii 1.0\n')
+        f.write(f'element vertex {coords.shape[0]}\n')
+        f.write('property float x\n')
+        f.write('property float y\n')
+        f.write('property float z\n')
+        f.write('property uchar red\n')
+        f.write('property uchar green\n')
+        f.write('property uchar blue\n')
+        f.write('end_header\n')
+
+        # 确保 sampled_classes 是可索引的列表/数组
+        if sampled_classes is not None:
+            # 1. 如果是 Tensor，转为 Numpy
+            if hasattr(sampled_classes, 'cpu'): 
+                sampled_classes = sampled_classes.cpu().numpy()
+            
+            # 2. 如果是 Numpy，转为 List
+            if hasattr(sampled_classes, 'tolist'): 
+                sampled_classes = sampled_classes.tolist()
+            
+            # 3. 【新增】如果是单个整数 (int)，强制包装成列表
+            if isinstance(sampled_classes, int):
+                sampled_classes = [sampled_classes]
+
+        for i in range(coords.shape[0]):
+            x, y, z = coords[i][:3]
+            lbl_idx = int(labels[i])
+            
+            # 1. 获取真实类别 ID
+            real_label = lbl_idx
+            if sampled_classes is not None:
+                # 如果标签在范围内，映射回真实ID；否则视为背景或忽略
+                if 0 <= lbl_idx < len(sampled_classes):
+                    real_label = sampled_classes[lbl_idx]
+                else:
+                    real_label = -1 # Ignore
+
+            # 2. 根据真实 ID 查颜色
+            if real_label in color_map:
+                r, g, b = color_map[real_label]
+            else:
+                # 默认颜色 (比如白色或灰色) 用于未知类别
+                r, g, b = 200, 200, 200 
+            
+            f.write(f'{x:.4f} {y:.4f} {z:.4f} {r} {g} {b}\n')

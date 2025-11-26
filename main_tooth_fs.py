@@ -36,6 +36,9 @@ from util.scannet_v2_fs import Scannetv2_FS, Scannetv2_FS_TEST
 from util.common_util import (
     AverageMeter,
     find_free_port,
+    LABEL2COLOR_LOWER,
+    LABEL2COLOR_UPPER,
+    save_colored_ply_v2
 )
 from util.data_util import (
     collate_fn_limit_fs,
@@ -891,28 +894,83 @@ def validate(val_loader, model, valid_calsses):
         if args.forvis:
             query_name = scene_names[0]
             support_name = scene_names[1]
+            
+            # --- 自动判断使用哪套颜色表 ---
+            # 假设文件名包含 'lower' 或 'upper' (不区分大小写)
+            fname_lower = query_name.lower()
+            if 'lower' in fname_lower:
+                current_palette = LABEL2COLOR_LOWER
+            elif 'upper' in fname_lower:
+                current_palette = LABEL2COLOR_UPPER
+            else:
+                # 如果无法从文件名判断，默认使用 Lower (或者您可以改为 Upper)
+                # print(f"Warning: Cannot detect jaw type from {query_name}, defaulting to Lower.")
+                current_palette = LABEL2COLOR_LOWER
+
             save_dir = os.path.join(pred_path, f"{query_name}_{support_name}")
             os.makedirs(save_dir, exist_ok=True)
-            np.save(
-                os.path.join(save_dir, "query.npy"),
-                query_x.cpu().numpy(),
+            
+            # 准备数据
+            q_coords = query_x.cpu().numpy()
+            q_labels = query_y.cpu().numpy()
+            s_coords = support_x.cpu().numpy()
+            s_labels = support_y.cpu().numpy()
+            q_preds = output.cpu().numpy()
+            
+            # 获取本个样本对应的真实类别映射表 (Tensor -> Numpy/List)
+            # batch_size=1, 所以取 sampled_classes[0]
+            current_episode_classes = sampled_classes[0]
+
+            # --- 保存 PLY ---
+            
+            # 1. Query Ground Truth (带颜色)
+            save_colored_ply_v2(
+                q_coords, q_labels, 
+                os.path.join(save_dir, "query_gt.ply"),
+                current_palette,
+                sampled_classes=current_episode_classes
             )
-            np.save(
-                os.path.join(save_dir, "querylb.npy"),
-                query_y.cpu().numpy(),
+            
+            # 2. Query Prediction (带颜色)
+            save_colored_ply_v2(
+                q_coords, q_preds, 
+                os.path.join(save_dir, "query_pred.ply"),
+                current_palette,
+                sampled_classes=current_episode_classes
             )
-            np.save(
-                os.path.join(save_dir, "sup.npy"),
-                support_x.cpu().numpy(),
+
+            # 3. Support Ground Truth (带颜色)
+            save_colored_ply_v2(
+                s_coords, s_labels, 
+                os.path.join(save_dir, "support_gt.ply"),
+                current_palette,
+                sampled_classes=current_episode_classes
             )
-            np.save(
-                os.path.join(save_dir, "suplb.npy"),
-                support_y.cpu().numpy(),
-            )
-            np.save(
-                os.path.join(save_dir, "pred.npy"),
-                output.cpu().numpy(),
-            )
+
+            # query_name = scene_names[0]
+            # support_name = scene_names[1]
+            # save_dir = os.path.join(pred_path, f"{query_name}_{support_name}")
+            # os.makedirs(save_dir, exist_ok=True)
+            # np.save(
+            #     os.path.join(save_dir, "query.npy"),
+            #     query_x.cpu().numpy(),
+            # )
+            # np.save(
+            #     os.path.join(save_dir, "querylb.npy"),
+            #     query_y.cpu().numpy(),
+            # )
+            # np.save(
+            #     os.path.join(save_dir, "sup.npy"),
+            #     support_x.cpu().numpy(),
+            # )
+            # np.save(
+            #     os.path.join(save_dir, "suplb.npy"),
+            #     support_y.cpu().numpy(),
+            # )
+            # np.save(
+            #     os.path.join(save_dir, "pred.npy"),
+            #     output.cpu().numpy(),
+            # )
             torch.cuda.empty_cache()
 
         if args.multiprocessing_distributed:
