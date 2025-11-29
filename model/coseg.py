@@ -63,7 +63,7 @@ class COSeg(nn.Module):
                     7: 5,
                     9: 6,
                 }
-        else:
+        elif args.data_name == "scannetv2":
             self.base_classes = 10
             if args.cvfold == 1:
                 self.base_class_to_pred_label = {
@@ -91,6 +91,26 @@ class COSeg(nn.Module):
                     18: 9,
                     20: 10,
                 }
+        elif args.data_name == "tooth":
+            # Fold 0: Train = Incisors(4) + Molars(6) = 10 classes
+            # Fold 1: Train = Canines(2) + Premolars(4) = 6 classes
+            if args.cvfold == 0:
+                self.base_classes = 10
+                # 列表: [1, 2, 6, 7, 8, 9, 10, 14, 15, 16] -> 映射到 1..10
+                self.base_class_to_pred_label = {
+                    1: 1, 2: 2, 6: 3, 7: 4, 8: 5, 
+                    9: 6, 10: 7, 14: 8, 15: 9, 16: 10
+                }
+            elif args.cvfold == 1:
+                self.base_classes = 6
+                # 列表: [3, 4, 5, 11, 12, 13] -> 映射到 1..6
+                self.base_class_to_pred_label = {
+                    3: 1, 4: 2, 5: 3, 11: 4, 12: 5, 13: 6
+                }
+            else:
+                raise NotImplementedError("Unknown cvfold for tooth")
+        else:
+            raise NotImplementedError(f"The dataset {args.data_name} is not supported.")
 
         if self.main_process():
             self.logger = get_logger(args.save_path)
@@ -109,7 +129,8 @@ class COSeg(nn.Module):
             rel_value=args.rel_value,
             drop_path_rate=args.drop_path_rate,
             concat_xyz=args.concat_xyz,
-            num_classes=self.args.classes // 2 + 1,
+            # num_classes=self.args.classes // 2 + 1,
+            num_classes= self.base_classes + 1,
             ratio=args.ratio,
             k=args.k,
             prev_grid_size=args.grid_size,
@@ -148,6 +169,8 @@ class COSeg(nn.Module):
         )
 
         if self.args.data_name == "s3dis":
+            agglayers = 2
+        elif self.args.data_name == "tooth":
             agglayers = 2
         else:
             agglayers = 4

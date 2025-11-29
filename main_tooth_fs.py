@@ -356,7 +356,7 @@ def main_worker(gpu, ngpus_per_node, argss):
         # and avoid conflicts from other processes
         if main_process():
             logger.info(
-                "The main process prepares test data while other processes wait..."
+                "The main process prepares test/eval data while other processes wait..."
             )
             val_data.prepare_test_data()
 

@@ -16,20 +16,37 @@ def pc_normalize(pc):
     pc = pc / m
     return pc
 
+def fnv_hash_vec(arr):
+    """
+    FNV64-1A
+    """
+    assert arr.ndim == 2
+    # Floor first for negative coordinates
+    arr = arr.copy()
+    arr = arr.astype(np.uint64, copy=False)
+    hashed_arr = np.uint64(14695981039346656037) * np.ones(arr.shape[0], dtype=np.uint64)
+    for j in range(arr.shape[1]):
+        hashed_arr *= np.uint64(1099511628211)
+        hashed_arr = np.bitwise_xor(hashed_arr, arr[:, j])
+    return hashed_arr
+
 def voxelize(coord, voxel_size):
     """ 简单的网格下采样实现 """
     discrete_coord = np.floor(coord / np.array(voxel_size))
-    key = discrete_coord.astype(np.int32)
-    # 使用 numpy 的 unique 函数找到唯一体素的索引
-    _, unique_indices = np.unique(key, axis=0, return_index=True)
-    return unique_indices
+    key = fnv_hash_vec(discrete_coord)
+    idx_sort = np.argsort(key)
+    key_sort = key[idx_sort]
+    _, count = np.unique(key_sort, return_counts=True)
+    idx_select = np.cumsum(np.insert(count, 0, 0)[0:-1]) + np.random.randint(0, count.max(), count.size) % count
+    idx_unique = idx_sort[idx_select]
+    return idx_unique
 
 def tooth_data_prepare(
     coord,
     feat,
     label,
     split="train",
-    voxel_size=0.04,  # 
+    voxel_size=0.001,
     voxel_max=None,
     transform=None,
     shuffle_index=False,
@@ -82,7 +99,7 @@ class Tooth_base(Dataset):
         self,
         split="train",
         data_root="trainval", 
-        voxel_size=0.04,
+        voxel_size=0.001,
         voxel_max=None,
         transform=None,
         shuffle_index=False,
@@ -106,7 +123,7 @@ class Tooth_base(Dataset):
         # -------------------------------------------------------
         # 定义牙齿的类别
         # -------------------------------------------------------
-        self.all_classes = [i for i in range(1, 17)] #! 不含 0-gum
+        self.all_classes = [i for i in range(1, 17)] #! 不含 0-gum 
         self.class_count = len(self.all_classes)
 
         # Base: 切牙(1,2,9,10) + 磨牙(6,7,8,14,15,16)
@@ -119,11 +136,9 @@ class Tooth_base(Dataset):
         self.fold_1 = canines_and_premolars
 
         if cvfold == 0:
-            self.test_classes = self.fold_1  # 测试集用 Novel
-            self.train_classes = self.fold_0 # 训练集用 Base
+            self.test_classes = self.fold_1 
         elif cvfold == 1:
             self.test_classes = self.fold_0
-            self.train_classes = self.fold_1
         else:
             raise NotImplementedError("Unknown cvfold (%s). [Options: 0,1]" % cvfold)
 
@@ -147,7 +162,7 @@ class Tooth_base(Dataset):
             with open(class2scans_file, "rb") as f:
                 class2scans = pickle.load(f)
         else:
-            min_pts = 50 # 牙齿数据点可能较少，适当降低阈值
+            min_pts = 50 #! 牙齿数据点可能较少，适当降低阈值
             class2scans = {k: [] for k in self.all_classes}
 
             # 遍历所有 .npy 文件
@@ -190,7 +205,7 @@ class Tooth_FS(Tooth_base):
         self,
         split="train",
         data_root="trainval",
-        voxel_size=0.04, #!
+        voxel_size=0.001, 
         voxel_max=None,
         transform=None,
         shuffle_index=False,
@@ -416,12 +431,12 @@ class Tooth_FS(Tooth_base):
             test_label = torch.zeros(label.shape, dtype=torch.long)
             test_mapping = {c: i + 1 for i, c in enumerate(sampled_classes)}
 
-            if self.split == "train":
-                for c in self.test_classes:
-                    # 如果某个点属于测试集类别(干扰项)，设为 0
-                    test_label[label == c] = 0
             for real_id, mapped_id in test_mapping.items():
                 test_label[label == real_id] = mapped_id
+            if self.split == "train":
+                for c in self.test_classes:
+                    # 如果某个点属于测试集类别(干扰项)，设为 255
+                    test_label[label == c] = 255
 
         return feat, train_label, test_label
 
@@ -434,7 +449,7 @@ class Tooth_FS_TEST(Dataset):
         self,
         split="test",  # 注意这里通常是 test 或 val
         data_root="trainval",
-        voxel_size=0.04,
+        voxel_size=0.001,
         voxel_max=None,
         transform=None,
         shuffle_index=False,
@@ -468,26 +483,36 @@ class Tooth_FS_TEST(Dataset):
         self.n_way = n_way
         self.num_episode_per_comb = num_episode_per_comb
 
-        self.cvfold = cvfold
-        self.k_shot = k_shot
-        self.voxel_size = voxel_size
-        self.data_root = data_root
-
         # 定义保存测试数据的文件夹路径
         # 格式参考 S3DIS: S_{fold}_N_{way}_K_{shot}_...
-        self.test_data_path = os.path.join(
-            os.path.dirname(data_root),
-            "Tooth_S_%d_N_%d_K_%d_test_episodes_%d_vs_%.2f"
-            % (
-                cvfold,
-                n_way,
-                k_shot,
-                num_episode_per_comb,
-                voxel_size,
-            ),
-        )
-        self.prepare_test_data()
-
+        if split == "val":
+            self.test_data_path = os.path.join(
+                os.path.dirname(data_root), "eval_episodes", 
+                "Tooth_S%d_N%d_K%d_episodes%d_pts%d_vs%.3f"
+                % (
+                    cvfold,
+                    n_way,
+                    k_shot,
+                    num_episode_per_comb,
+                    voxel_max,
+                    voxel_size,
+                ),
+            )
+        elif split == "test":
+            self.test_data_path = os.path.join(
+                os.path.dirname(data_root), "test_episodes", 
+                "Tooth_S%d_N%d_K%d_episodes%d_pts%d_vs%.3f"
+                % (
+                    cvfold,
+                    n_way,
+                    k_shot,
+                    num_episode_per_comb,
+                    voxel_max,
+                    voxel_size,
+                ),
+            )
+        else:
+            raise NotImplementedError("Mode (%s) is unknown!" % split)
 
     def prepare_test_data(self):
 
@@ -567,7 +592,7 @@ class Tooth_FSForVIS(Tooth_FS):
         self,
         split="test",  # 通常可视化是在测试集上做
         data_root="trainval",
-        voxel_size=0.04,
+        voxel_size=0.001,
         voxel_max=None,
         transform=None,
         shuffle_index=False,
@@ -608,6 +633,7 @@ class Tooth_FSForVIS(Tooth_FS):
         # 生成所有可能的组合 (Support, Query)
         # 长度为 k_shot + n_queries (通常是 1+1=2)
         combo_length = self.k_shot + self.n_queries
+
         if len(available_scans) < combo_length:
              print(f"Warning: Not enough scans for class {self.target_class} to make unique pairs.")
              self.combos = []
@@ -618,44 +644,62 @@ class Tooth_FSForVIS(Tooth_FS):
         print(f"[VIS Dataset] Target Class: {self.target_class} | Total Combinations: {len(self.combos)}")
 
     def __getitem__(self, idx):
-        """
-        返回指定索引的 Support 和 Query 数据对
-        """
+        # 1. 确定 n_way 个类别
+        # 第一个是我们的目标类，剩下 n_way-1 个从其他类里随机选
+        other_classes = [c for c in self.classes if c != self.target_class]
+        
+        if self.n_way > 1:
+            # 随机选干扰类
+            distractors = np.random.choice(other_classes, self.n_way - 1, replace=False)
+            sampled_classes = np.concatenate(([self.target_class], distractors))
+        else:
+            sampled_classes = np.array([self.target_class])
+
         support_ptclouds, support_masks = [], []
         query_ptclouds, query_labels = [], []
 
-        # 获取当前组合的文件名列表
+        # 获取目标类的文件名组合
         selected_scannames = self.combos[idx]
-        
-        # 切分 Query 和 Support
-        # 注意：这里通常 Query 在前还是 Support 在前取决于你的习惯
-        # S3DIS代码逻辑是：先切出 query，剩下的给 support
         query_scannames = selected_scannames[: self.n_queries]
-        support_scannames = selected_scannames[self.n_queries :]
+        target_support_scannames = selected_scannames[self.n_queries :] # 长度应为 k_shot
 
-        # 1. 构建 Query Set
+        # 2. 构建 Support Set
+        # 关键：必须按照 sampled_classes 的顺序添加 support 样本
+        for cls in sampled_classes:
+            if cls == self.target_class:
+                # 目标类：使用确定的文件名
+                for scan_name in target_support_scannames:
+                    ptcloud, label = self.sample_test_pointcloud(
+                        scan_name, sampled_classes, cls, support=True
+                    )
+                    support_ptclouds.append(ptcloud)
+                    support_masks.append(label)
+            else:
+                # 干扰类：随机抽取 k_shot 个文件
+                dist_scans = np.random.choice(self.class2scans[cls], self.k_shot, replace=True)
+                for scan_name in dist_scans:
+                    ptcloud, label = self.sample_test_pointcloud(
+                        scan_name, sampled_classes, cls, support=True
+                    )
+                    support_ptclouds.append(ptcloud)
+                    support_masks.append(label)
+
+        # 3. 构建 Query Set
+        # 我们只关心目标类的 Query 表现，干扰类的 Query 不需要添加
         for scan_name in query_scannames:
             ptcloud, label = self.sample_test_pointcloud(
-                scan_name, [self.target_class], self.target_class, support=False
+                scan_name, sampled_classes, self.target_class, support=False
             )
             query_ptclouds.append(ptcloud)
             query_labels.append(label)
-
-        # 2. 构建 Support Set
-        for scan_name in support_scannames:
-            ptcloud, label = self.sample_test_pointcloud(
-                scan_name, [self.target_class], self.target_class, support=True
-            )
-            support_ptclouds.append(ptcloud)
-            support_masks.append(label)
 
         return (
             support_ptclouds,
             support_masks,
             query_ptclouds,
             query_labels,
-            np.array([self.target_class]), # 返回当前可视化的类别 ID
-            selected_scannames,            # 返回文件名，方便保存图片命名
+            sampled_classes,    # 这里返回完整的 classes (包含干扰项)
+            selected_scannames, # 文件名只对应目标类的 query 和 support
         )
 
     def __len__(self):
