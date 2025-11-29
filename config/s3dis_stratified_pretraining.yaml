@@ -1,12 +1,12 @@
 DATA:
   data_name: s3dis
-  data_root: # Fill in the pre-processed data path (which contains the .npy files)
+  data_root: /home/zychen/Documents/Project_shno/COSeg/datasets/S3DIS/scenes/data # Fill in the pre-processed data path (which contains the .npy files)
   classes: 13
   fea_dim: 6
   voxel_size: 0.02
   voxel_max: 20480
   loop: 1
-  cvfold: 1
+  cvfold: 0
 
 TRAIN:
   # arch
@@ -47,9 +47,9 @@ TRAIN:
   use_amp: True
   optimizer: AdamW 
   ignore_label: 255
-  train_gpu: [0, 1, 2, 3]
+  train_gpu: [1]
   workers: 16  # data loader workers
-  batch_size: 8  # batch size for training
+  batch_size: 4  # batch size for training
   batch_size_val: 4  # batch size for validation during training, memory and speed tradeoff
   base_lr: 0.006
   epochs: 100
@@ -71,6 +71,6 @@ TRAIN:
 Distributed:
   dist_url: tcp://127.0.0.1:6789
   dist_backend: 'nccl'
-  multiprocessing_distributed: True
+  multiprocessing_distributed: False
   world_size: 1
   rank: 0

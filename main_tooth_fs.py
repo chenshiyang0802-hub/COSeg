@@ -7,7 +7,6 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import os
-# os.environ['CUDA_VISIBLE_DEVICES'] = '6'
 
 import time
 import random
@@ -29,7 +28,6 @@ from functools import partial
 
 from util import config
 from util.s3dis_fs import S3DIS_FS, S3DIS_FS_TEST, S3DIS_FSForVIS
-#!
 from util.tooth_fs import Tooth_FS, Tooth_FS_TEST, Tooth_FSForVIS
 
 from util.scannet_v2_fs import Scannetv2_FS, Scannetv2_FS_TEST
@@ -320,7 +318,7 @@ def main_worker(gpu, ngpus_per_node, argss):
                 data_root=args.data_root,
                 voxel_size=args.voxel_size,
                 voxel_max=args.voxel_max,
-                transform=val_transform,
+                transform=None,
                 cvfold=args.cvfold,
                 num_episode=args.num_episode,
                 n_way=args.n_way,
@@ -337,7 +335,7 @@ def main_worker(gpu, ngpus_per_node, argss):
                 data_root=args.data_root,
                 voxel_size=args.voxel_size,
                 voxel_max=args.voxel_max,
-                transform=val_transform,
+                transform=None,
                 cvfold=args.cvfold,
                 num_episode=args.num_episode, # 验证时的 episode 数
                 n_way=args.n_way,

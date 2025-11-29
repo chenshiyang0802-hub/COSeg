@@ -261,6 +261,7 @@ class Tooth_FS(Tooth_base):
             
             needs = self.k_shot + self.n_queries
             if len(valid_scannames) < needs:
+                print(f"[Warning] Class {sampled_class} has only {len(valid_scannames)} scans, "f"but needs {needs}. Duplicates will be used (Risk of Leakage)")
                 selected_scannames = np.random.choice(all_scannames, needs, replace=True)
             else:
                 selected_scannames = np.random.choice(valid_scannames, needs, replace=False)
